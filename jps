@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dijkstra vs A* vs JPS</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: var(--color-background-primary, #ffffff); }
+    @media (prefers-color-scheme: dark) { body { background: #0f172a; color: #f1f5f9; } }
+    
+    *{box-sizing:border-box;margin:0;padding:0}
+    .wrap{padding:1rem;font-family:var(--font-sans,sans-serif);max-width: 1200px;margin: 0 auto;}
+    canvas{display:block;border-radius:8px;border:0.5px solid #ccc;cursor:crosshair;width:100%;max-width:320px;height:auto;margin: 0 auto;}
+    
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:15px;background:rgba(0,0,0,0.03);padding:10px;border-radius:8px;}
+    @media (prefers-color-scheme: dark) { .toolbar { background: rgba(255,255,255,0.05); } }
+    
+    .toolbar label{font-size:13px;font-weight:500;}
+    .btn{padding:6px 12px;border:1px solid #ccc;border-radius:6px;background:transparent;font-size:13px;cursor:pointer;transition:background .12s;color:inherit;}
+    .btn:hover{background:rgba(0,0,0,0.05)}
+    @media (prefers-color-scheme: dark) { .btn:hover { background:rgba(255,255,255,0.1); } }
+    
+    .btn.active{background:rgba(0,0,0,0.1);font-weight:bold;}
+    @media (prefers-color-scheme: dark) { .btn.active { background:rgba(255,255,255,0.2); } }
+    
+    .btn-run{border-color:#185FA5;color:#185FA5;font-weight:bold;}
+    @media (prefers-color-scheme: dark) { .btn-run{border-color:#60a5fa;color:#60a5fa;} }
+    .btn-run:hover{background:#E6F1FB}
+    @media (prefers-color-scheme: dark) { .btn-run:hover{background:rgba(96,165,250,0.15);} }
+    
+    .control-group {display:flex;align-items:center;gap:6px;font-size:13px;}
+    
+    .panels{display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:15px;margin-top:10px}
+    .panel-hd{font-size:14px;font-weight:bold;text-align:center;margin-bottom:8px;}
+    
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:15px;margin-top:15px}
+    .sc{background:rgba(0,0,0,0.03);border-radius:8px;padding:12px 16px; border-top: 4px solid #ccc;}
+    @media (prefers-color-scheme: dark) { .sc { background: rgba(255,255,255,0.05); } }
+    .sc-dijkstra { border-top-color: #3b82f6; }
+    .sc-astar { border-top-color: #f59e0b; }
+    .sc-jps { border-top-color: #8b5cf6; }
+    
+    .sc-label{font-size:14px;font-weight:bold;margin-bottom:10px;}
+    .sc-metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .metric-box { display: flex; flex-direction: column; }
+    .m-title { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.5px; }
+    .m-val { font-size: 18px; font-weight: bold; font-family: monospace; }
+    .m-highlight { color: #10b981; }
+    .m-warning { color: #ef4444; }
+    
+    .legend{display:flex;gap:15px;flex-wrap:wrap;margin-top:15px;padding:10px;background:rgba(0,0,0,0.02);border-radius:8px; justify-content: center;}
+    @media (prefers-color-scheme: dark) { .legend { background: rgba(255,255,255,0.03); } }
+    .leg{display:flex;align-items:center;gap:6px;font-size:13px;}
+    .ldot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+    
+    .hint{font-size:14px;margin-top:10px;color:#64748b;font-weight:bold;text-align:center;}
+    @media (prefers-color-scheme: dark) { .hint { color: #94a3b8; } }
+    .mode-indicator{font-size:13px;padding:4px 12px;border-radius:20px;border:1px solid #ccc;font-weight:bold;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2 style="margin-bottom:15px;font-size:20px;text-align:center;">Dijkstra vs A* vs JPS</h2>
+    
+    <div class="toolbar">
+      <span class="mode-indicator" id="modeLabel">模式：畫牆</span>
+      <button class="btn active" id="btnWall" onclick="setMode('wall')">畫牆</button>
+      <button class="btn" id="btnErase" onclick="setMode('erase')">擦除</button>
+      <button class="btn" id="btnStart" onclick="setMode('start')">移起點</button>
+      <button class="btn" id="btnEnd" onclick="setMode('end')">移終點</button>
+      <button class="btn" onclick="clearWalls()">清空</button>
+      <button class="btn" onclick="generateMaze()">隨機障礙</button>
+<!-- //一開始選擇計算方法 -->
+      <div class="control-group" style="margin-left: auto;">
+        <label for="heurSelect">預估法：</label>
+        <select id="heurSelect" class="btn" style="padding: 4px 8px;">
+          <option value="diagonal" selected>對角線</option>
+          <option value="euclidean">歐幾里得</option>
+          <option value="manhattan">曼哈頓</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>速度</label>
+        <input type="range" min="1" max="5" value="3" step="1" id="speedSlider" style="width:70px;cursor:pointer;">
+      </div>
+<!-- 開始 -->
+      <button class="btn btn-run" onclick="runAll()"> 執行</button>
+    </div>
+
+    <div class="panels">
+      <div>
+        <div class="panel-hd" style="color:#2563eb">Dijkstra</div>
+        <canvas id="c1" width="320" height="320"></canvas>
+      </div>
+      <div>
+        <div class="panel-hd" style="color:#d97706">A*</div>
+        <canvas id="c2" width="320" height="320"></canvas>
+      </div>
+      <div>
+        <div class="panel-hd" style="color:#8b5cf6">JPS</div>
+        <canvas id="c3" width="320" height="320"></canvas>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="leg"><div class="ldot" style="background:#22c55e"></div>起點</div>
+      <div class="leg"><div class="ldot" style="background:#ef4444"></div>終點</div>
+      <div class="leg"><div class="ldot" style="background:#334155"></div>牆壁</div>
+      <div class="leg"><div class="ldot" style="background:#bfdbfe"></div>Dijkstra 探索</div>
+      <div class="leg"><div class="ldot" style="background:#fde68a"></div>A* 探索</div>
+      <div class="leg"><div class="ldot" style="background:#ddd6fe"></div>JPS 尋找跳躍點</div>
+      <div class="leg"><div class="ldot" style="background:#f59e0b"></div>最短路徑</div>
+    </div>
+    <div class="hint" id="hintText">提示：JPS 會直接跳過空地，只探索「轉角」！</div>
+
+    <div class="stats-row" id="statsRow" style="display:none">
+      <div class="sc sc-dijkstra">
+        <div class="sc-label">Dijkstra</div>
+        <div class="sc-metric-grid">
+          <div class="metric-box"><span class="m-title">探索節點數</span><span class="m-val" id="d_v">—</span></div>
+          <div class="metric-box"><span class="m-title">運算時間</span><span class="m-val"><span id="d_t">—</span> ms</span></div>
+          <div class="metric-box"><span class="m-title">路徑長度</span><span class="m-val" id="d_p">—</span></div>
+          <div class="metric-box"><span class="m-title">探索效率</span><span class="m-val" id="d_e">—</span></div>
+        </div>
+      </div>
+      <div class="sc sc-astar">
+        <div class="sc-label">A*</div>
+        <div class="sc-metric-grid">
+          <div class="metric-box"><span class="m-title">探索節點數</span><span class="m-val" id="a_v">—</span></div>
+          <div class="metric-box"><span class="m-title">運算時間</span><span class="m-val"><span id="a_t">—</span> ms</span></div>
+          <div class="metric-box"><span class="m-title">路徑長度</span><span class="m-val" id="a_p">—</span></div>
+          <div class="metric-box"><span class="m-title">探索效率</span><span class="m-val" id="a_e">—</span></div>
+        </div>
+      </div>
+      <div class="sc sc-jps">
+        <div class="sc-label">JPS</div>
+        <div class="sc-metric-grid">
+          <div class="metric-box"><span class="m-title">探索節點數</span><span class="m-val" id="j_v">—</span></div>
+          <div class="metric-box"><span class="m-title">運算時間</span><span class="m-val"><span id="j_t">—</span> ms</span></div>
+          <div class="metric-box"><span class="m-title">路徑長度</span><span class="m-val" id="j_p">—</span></div>
+          <div class="metric-box"><span class="m-title">探索效率</span><span class="m-val" id="j_e">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const COLS=24,ROWS=24;
+    let grid=Array(ROWS*COLS).fill(0);
+    let S={r:2,c:2},E={r:ROWS-3,c:COLS-3};
+    let mode='wall',painting=false,paintVal=1;
+    let running=false;
+
+    const isDark=()=>window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    const COLORS={
+      dVis:()=>isDark()?'#1e3a5f':'#bfdbfe',
+      aVis:()=>isDark()?'#451a03':'#fde68a',
+      jVis:()=>isDark()?'#4c1d95':'#ddd6fe',
+      path:'#f59e0b',
+      start:'#22c55e',
+      end:'#ef4444'
+    };
+
+    function idx(r,c){return r*COLS+c}
+    function inBounds(r,c){return r>=0&&r<ROWS&&c>=0&&c<COLS}
+    function isPassable(r,c){return inBounds(r,c) && grid[idx(r,c)]===0}
+
+    function setMode(m){
+      mode=m;
+      ['wall','erase','start','end'].forEach(x=>document.getElementById('btn'+x.charAt(0).toUpperCase()+x.slice(1)).classList.remove('active'));
+      document.getElementById('btn'+m.charAt(0).toUpperCase()+m.slice(1)).classList.add('active');
+      const labels={wall:'模式：畫牆',erase:'模式：擦除',start:'模式：移起點',end:'模式：移終點'};
+      document.getElementById('modeLabel').textContent=labels[m];
+    }
+
+    function getNeighbors8(r, c) {
+      let res = [];
+      for(let dr of [-1, 0, 1]) {
+        for(let dc of [-1, 0, 1]) {
+          if(dr===0 && dc===0) continue;
+          let nr = r + dr, nc = c + dc;
+          if(isPassable(nr, nc)) {
+            // 防切西瓜
+            if(Math.abs(dr)===1 && Math.abs(dc)===1) {
+              if(!isPassable(r, nc) && !isPassable(nr, c)) continue;
+            }
+            res.push({r: nr, c: nc, cost: (dr===0 || dc===0) ? 1 : 1.41421});
+          }
+        }
+      }
+      return res;
+    }
+
+    function heur(r, c) {
+      const type = document.getElementById('heurSelect').value;
+      let dr = Math.abs(r - E.r);
+      let dc = Math.abs(c - E.c);
+
+      if (type === 'euclidean') {
+        return Math.sqrt(dr * dr + dc * dc);
+      } else if (type === 'manhattan') {
+        return dr + dc;
+      } else {
+        return Math.max(dr, dc) + (1.41421 - 1) * Math.min(dr, dc);
+      }
+    }
+
+    function draw(cid, visitedSet, pathSet) {
+      const cv=document.getElementById(cid);
+      const ctx=cv.getContext('2d');
+      const W=cv.width/COLS, H=cv.height/ROWS;
+      ctx.clearRect(0,0,cv.width,cv.height);
+      const dark=isDark();
+
+      for(let r=0;r<ROWS;r++){
+        for(let c=0;c<COLS;c++){
+          const k=idx(r,c);
+          const isWall=grid[k]===1;
+          const x=c*W, y=r*H;
+          
+          if(isWall){
+            ctx.fillStyle=dark?'#475569':'#334155';
+          } else if(pathSet&&pathSet.has(k)){
+            ctx.fillStyle=COLORS.path;
+          } else if(visitedSet&&visitedSet.has(k)){
+            if(cid==='c1') ctx.fillStyle=COLORS.dVis();
+            else if(cid==='c2') ctx.fillStyle=COLORS.aVis();
+            else ctx.fillStyle=COLORS.jVis();
+          } else {
+            ctx.fillStyle=dark?'#0f172a':'#f1f5f9';
+          }
+          ctx.fillRect(x+0.5, y+0.5, W-1, H-1);
+
+          if(!isWall&&!pathSet?.has(k)){
+            ctx.strokeStyle=dark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.06)';
+            ctx.lineWidth=0.5;
+            ctx.strokeRect(x+0.5, y+0.5, W-1, H-1);
+          }
+        }
+      }
+
+      const drawCircle=(r,c,color)=>{
+        ctx.fillStyle=color; ctx.beginPath();
+        ctx.arc((c+0.5)*W, (r+0.5)*H, W*0.38, 0, Math.PI*2); ctx.fill();
+      };
+      drawCircle(S.r, S.c, COLORS.start);
+      drawCircle(E.r, E.c, COLORS.end);
+
+      if(pathSet&&pathSet.size>0){
+        ctx.strokeStyle=dark?'#fbbf24':'#d97706';
+        ctx.lineWidth=3; ctx.lineJoin='round'; ctx.lineCap='round';
+      }
+    }
+
+    function drawAll(dV,dP, aV,aP, jV,jP){
+      draw('c1',dV,dP); draw('c2',aV,aP); draw('c3',jV,jP);
+    }
+
+    function constructPath(prev, order, visitedCount){
+      const path=[]; let cur=idx(E.r,E.c);
+      if (prev[cur] !== -1 && prev[cur] !== null && prev[cur] !== undefined) {
+        while(cur!==-1 && prev[cur]!==-1 && prev[cur] !== undefined){path.unshift(cur); cur=prev[cur];}
+        if(path.length) path.unshift(idx(S.r,S.c));
+      }
+      return {order, path, visitedCount};
+    }
+
+    function dijkstraFull(){
+      const dist=Array(ROWS*COLS).fill(Infinity);
+      const prev=Array(ROWS*COLS).fill(-1);
+      const vis=new Set();
+      const queue=[{r:S.r,c:S.c,d:0}];
+      dist[idx(S.r,S.c)]=0;
+      const order=[];
+      
+      while(queue.length){
+        queue.sort((a,b)=>a.d-b.d);
+        const {r,c,d}=queue.shift();
+        const k=idx(r,c);
+        
+        // 修正重啟邏輯：確保只走最短路徑
+        if (d > dist[k]) continue;
+        if (!vis.has(k)) { vis.add(k); order.push({r,c}); }
+        if (r===E.r && c===E.c) break;
+        
+        for(const nb of getNeighbors8(r,c)){
+          const nk=idx(nb.r, nb.c);
+          if(d+nb.cost < dist[nk]){
+            dist[nk] = d+nb.cost; prev[nk] = k;
+            queue.push({r:nb.r, c:nb.c, d:dist[nk]});
+          }
+        }
+      }
+      return constructPath(prev, order, vis.size);
+    }
+ <!-- // a*演算法 -->
+    function astarFull(){
+      const g=Array(ROWS*COLS).fill(Infinity);
+      const f=Array(ROWS*COLS).fill(Infinity);
+      const prev=Array(ROWS*COLS).fill(-1);
+      const vis=new Set();
+      const open=new Set([idx(S.r,S.c)]);
+      g[idx(S.r,S.c)]=0; f[idx(S.r,S.c)]=heur(S.r,S.c);
+      const order=[];
+      
+      while(open.size){
+        const cur=[...open].reduce((a,b)=>f[a]<f[b]?a:b);
+        const r=Math.floor(cur/COLS), c=cur%COLS;
+        open.delete(cur); 
+        
+        // 確保視覺化不會出錯
+        if (!vis.has(cur)) { vis.add(cur); order.push({r,c}); }
+        if(r===E.r && c===E.c) break;
+        
+        for(const nb of getNeighbors8(r,c)){
+          const nk=idx(nb.r,nb.c);
+          const ng = g[cur] + nb.cost;
+          
+         
+          if(ng < g[nk]){
+            prev[nk]=cur; g[nk]=ng; f[nk]=ng+heur(nb.r,nb.c);
+            open.add(nk);
+          }
+        }
+      }
+      return constructPath(prev, order, vis.size);
+    }
+
+   
+    function jpsFull() {
+      const g = Array(ROWS*COLS).fill(Infinity);
+      const f = Array(ROWS*COLS).fill(Infinity);
+      const prev = Array(ROWS*COLS).fill(null);
+      const vis = new Set();
+      const open = new Set([idx(S.r, S.c)]);
+      g[idx(S.r, S.c)] = 0; f[idx(S.r, S.c)] = heur(S.r, S.c);
+      const order = [];
+
+      function jump(r0, c0, dr, dc) {
+      let r = r0 + dr, c = c0 + dc;
+      while (true) {
+    if (!isPassable(r, c)) return null;
+    if (r === E.r && c === E.c) return {r, c};
+
+    if (dr !== 0 && dc !== 0) {
+      if (!isPassable(r, c - dc) && !isPassable(r - dr, c)) return null; // 防穿牆
+      if ((isPassable(r - dr, c + dc) && !isPassable(r - dr, c)) ||
+          (isPassable(r + dr, c - dc) && !isPassable(r, c - dc))) {
+        return {r, c};
+      }
+      if (jump(r, c, dr, 0) !== null || jump(r, c, 0, dc) !== null) {
+        return {r, c};
+      }
+    } else {
+      if (dr !== 0) {
+        if ((isPassable(r, c + 1) && !isPassable(r - dr, c + 1)) ||
+            (isPassable(r, c - 1) && !isPassable(r - dr, c - 1))) {
+          return {r, c};
+        }
+      } else {
+        if ((isPassable(r + 1, c) && !isPassable(r + 1, c - dc)) ||
+            (isPassable(r - 1, c) && !isPassable(r - 1, c - dc))) {
+          return {r, c};
+        }
+      }
+    }
+    r += dr; c += dc;
+  }
+}
+
+      function getSuccessors(r, c) {
+        let succ = [];
+        let p = prev[idx(r, c)];
+        let dirs = [];
+        if (p) {
+          let dr = Math.sign(r - p.r), dc = Math.sign(c - p.c);
+          if (dr !== 0 && dc !== 0) {
+            dirs.push([dr, 0], [0, dc], [dr, dc]);
+            if (!isPassable(r, c - dc)) dirs.push([dr, -dc]);
+            if (!isPassable(r - dr, c)) dirs.push([-dr, dc]);
+          } else {
+             if (dr !== 0) {
+                dirs.push([dr, 0]);
+                if (!isPassable(r - dr, c + 1)) dirs.push([dr, 1]);
+                if (!isPassable(r - dr, c - 1)) dirs.push([dr, -1]);
+            } else {
+                dirs.push([0, dc]);
+                if (!isPassable(r + 1, c - dc)) dirs.push([1, dc]);
+                if (!isPassable(r - 1, c - dc)) dirs.push([-1, dc]);
+            }
+          }
+        } else {
+          for(let dr of [-1,0,1]) for(let dc of [-1,0,1]) if(dr!==0 || dc!==0) dirs.push([dr,dc]);
+        }
+        
+        for (let [ddr, ddc] of dirs) {
+          let jp = jump(r, c, ddr, ddc);
+          if (jp) succ.push(jp);
+        }
+        return succ;
+      }
+
+      while(open.size) {
+        let cur = [...open].reduce((a, b) => f[a] < f[b] ? a : b);
+        let r = Math.floor(cur/COLS), c = cur%COLS;
+        open.delete(cur); 
+        
+        if (!vis.has(cur)) { vis.add(cur); order.push({r, c}); }
+        if (r === E.r && c === E.c) break;
+
+        let successors = getSuccessors(r, c);
+        for (let s of successors) {
+          let sk = idx(s.r, s.c);
+          
+          let dist = Math.max(Math.abs(s.r - r), Math.abs(s.c - c)) + (1.41421 - 1) * Math.min(Math.abs(s.r - r), Math.abs(s.c - c));
+          let ng = g[cur] + dist; 
+          
+         
+          if (ng < g[sk]) {
+            prev[sk] = {r, c};
+            g[sk] = ng;
+            f[sk] = ng + heur(s.r, s.c);
+            open.add(sk);
+          }
+        }
+      }
+      
+      const path = [];
+      if (prev[idx(E.r, E.c)] !== null && prev[idx(E.r, E.c)] !== undefined) {
+        let cur = {r: E.r, c: E.c};
+        while(cur && (cur.r !== S.r || cur.c !== S.c)) {
+          path.unshift(idx(cur.r, cur.c));
+          let p = prev[idx(cur.r, cur.c)];
+          if (!p) break;
+          let dr = Math.sign(cur.r - p.r), dc = Math.sign(cur.c - p.c);
+          let tr = cur.r - dr, tc = cur.c - dc;
+          while(tr !== p.r || tc !== p.c) {
+            path.unshift(idx(tr, tc));
+            tr -= dr; tc -= dc;
+          }
+          cur = p;
+        }
+        if(path.length) path.unshift(idx(S.r, S.c));
+      }
+      
+      return {order, path, visitedCount: vis.size};
+    }
+
+    async function runAll(){
+      if(running)return;
+      running=true;
+      document.getElementById('statsRow').style.display='none';
+      
+      const heurType = document.getElementById('heurSelect').value;
+      const heurText = document.getElementById('heurSelect').options[document.getElementById('heurSelect').selectedIndex].text;
+      document.getElementById('hintText').textContent = `運行一下 等我... (目前 A* 與 JPS 使用 ${heurText})`;
+// 選擇哪個演算法  D A J
+      const d_t0 = performance.now(); const dRes = dijkstraFull(); const dTime = (performance.now() - d_t0).toFixed(2);
+      const a_t0 = performance.now(); const aRes = astarFull(); const aTime = (performance.now() - a_t0).toFixed(2);
+      const j_t0 = performance.now(); const jRes = jpsFull(); const jTime = (performance.now() - j_t0).toFixed(2);
+
+      const speed=parseInt(document.getElementById('speedSlider').value);
+      const delay=[0,80,40,16,6,1][speed];
+      const batch=speed>=4?8:speed===3?4:2;
+
+      const dVis=new Set(), aVis=new Set(), jVis=new Set();
+      const maxLen=Math.max(dRes.order.length, aRes.order.length, jRes.order.length);
+
+      for(let i=0; i<maxLen; i+=batch){
+        for(let b=0; b<batch; b++){
+          if(i+b < dRes.order.length){ const n=dRes.order[i+b]; dVis.add(idx(n.r,n.c)); }
+          if(i+b < aRes.order.length){ const n=aRes.order[i+b]; aVis.add(idx(n.r,n.c)); }
+          if(i+b < jRes.order.length){ const n=jRes.order[i+b]; jVis.add(idx(n.r,n.c)); }
+        }
+        drawAll(dVis, null, aVis, null, jVis, null);
+        if(delay>0) await new Promise(r=>setTimeout(r,delay));
+      }
+
+      const dPath=new Set(dRes.path), aPath=new Set(aRes.path), jPath=new Set(jRes.path);
+      drawAll(dVis, dPath, aVis, aPath, jVis, jPath);
+
+      const shortestLength = dRes.path.length;
+
+      const setStats = (prefix, res, time) => {
+        document.getElementById(`${prefix}_v`).textContent = res.visitedCount;
+        document.getElementById(`${prefix}_t`).textContent = time;
+        
+        const pLen = res.path.length;
+        const pElem = document.getElementById(`${prefix}_p`);
+        pElem.textContent = pLen ? pLen : '無';
+        
+        if (pLen > shortestLength && shortestLength > 0) {
+            pElem.classList.add('m-warning');
+            pElem.textContent += ' (非最短)';
+        } else {
+            pElem.classList.remove('m-warning');
+        }
+        
+        const eff = pLen ? Math.round((pLen / res.visitedCount) * 100) : 0;
+        document.getElementById(`${prefix}_e`).textContent = `${eff}%`;
+        return eff;
+      };
+
+      const dEff = setStats('d', dRes, dTime);
+      const aEff = setStats('a', aRes, aTime);
+      const jEff = setStats('j', jRes, jTime);
+      
+      const maxEff = Math.max(dEff, aEff, jEff);
+      ['d', 'a', 'j'].forEach(prefix => {
+        const eff = prefix === 'd' ? dEff : prefix === 'a' ? aEff : jEff;
+        const elem = document.getElementById(`${prefix}_e`);
+        if(eff === maxEff && eff > 0) elem.classList.add('m-highlight');
+        else elem.classList.remove('m-highlight');
+      });
+      
+      document.getElementById('statsRow').style.display='grid';
+      
+      if (jRes.path.length === 0) {
+        document.getElementById('hintText').textContent = '目標被牆壁完全封死，找不到路徑。';
+      } else if (heurType === 'manhattan') {
+        document.getElementById('hintText').textContent = '警告：在 8 方向地圖使用「曼哈頓」會嚴重高估距離，導致 A* 與 JPS 抄錯路（走非最短路徑）！';
+      } else {
+        const saved = aRes.visitedCount - jRes.visitedCount;
+        document.getElementById('hintText').textContent = `JPS 效率達到 ${jEff}%，比 A* 更少探索了 ${saved} 個無效節點！`;
+      }
+      running=false;
+    }
+
+    function clearWalls(){grid=Array(ROWS*COLS).fill(0); drawAll(null,null,null,null,null,null); document.getElementById('statsRow').style.display='none'; document.getElementById('hintText').textContent='牆壁已清除，點選地圖開始繪製';}
+    function generateMaze(){
+      grid=Array(ROWS*COLS).fill(0);
+      for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) if(Math.random()<0.25) grid[idx(r,c)]=1;
+      grid[idx(S.r,S.c)]=0; grid[idx(E.r,E.c)]=0;
+      getNeighbors8(S.r,S.c).forEach(n=>grid[idx(n.r,n.c)]=0);
+      getNeighbors8(E.r,E.c).forEach(n=>grid[idx(n.r,n.c)]=0);
+      drawAll(null,null,null,null,null,null);
+      document.getElementById('statsRow').style.display='none';
+      document.getElementById('hintText').textContent='迷宮已生成，點選「執行」';
+    }
+
+    function handleCell(r,c){
+      if(!inBounds(r,c))return;
+      if(mode==='wall') grid[idx(r,c)]=paintVal;
+      else if(mode==='erase') grid[idx(r,c)]=0;
+      else if(mode==='start'){S={r,c}; grid[idx(r,c)]=0;}
+      else if(mode==='end'){E={r,c}; grid[idx(r,c)]=0;}
+      drawAll(null,null,null,null,null,null);
+    }
+
+    function cellFromEvent(e,cv){
+      const rect=cv.getBoundingClientRect();
+      return{r:Math.floor((e.clientY-rect.top)/rect.height*ROWS), c:Math.floor((e.clientX-rect.left)/rect.width*COLS)};
+    }
+
+    ['c1','c2','c3'].forEach(id=>{
+      const cv=document.getElementById(id);
+      const ev = (e) => { e.preventDefault(); const t = e.touches ? e.touches[0] : e; handleCell(cellFromEvent(t,cv).r, cellFromEvent(t,cv).c); };
+      cv.addEventListener('mousedown', e => { painting=true; paintVal=mode==='wall'?1:0; ev(e); });
+      cv.addEventListener('mousemove', e => { if(painting) ev(e); });
+      cv.addEventListener('touchstart', e => { painting=true; paintVal=1; ev(e); }, {passive:false});
+      cv.addEventListener('touchmove', e => { if(painting) ev(e); }, {passive:false});
+    });
+    document.addEventListener('mouseup',()=>painting=false); document.addEventListener('touchend',()=>painting=false);
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if(!running) drawAll(null,null,null,null,null,null); });
+
+    drawAll(null,null,null,null,null,null);
+  </script>
+</body>
+</html>
